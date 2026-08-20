@@ -24,7 +24,7 @@ function getPool(): Pool {
     );
   }
   if (!global.__pgPool) {
-    global.__pgPool = new Pool({
+    const pool = new Pool({
       connectionString,
       ssl:
         connectionString.includes("localhost") ||
@@ -33,16 +33,45 @@ function getPool(): Pool {
           : { rejectUnauthorized: false },
       max: 3,
     });
+    // An idle client can occasionally have its connection dropped by the
+    // database (e.g. a serverless Postgres provider recycling idle
+    // connections). `pg` surfaces that as an `error` event on the pool —
+    // without a listener, Node treats it as an unhandled error and can
+    // crash the process. Reset the cached pool on error instead, so the
+    // next query transparently reconnects with a fresh pool rather than
+    // reusing one left in a broken state.
+    pool.on("error", (err) => {
+      console.error("[db] Postgres pool error:", err);
+      if (global.__pgPool === pool) global.__pgPool = undefined;
+    });
+    global.__pgPool = pool;
   }
   return global.__pgPool;
+}
+
+function isConnectionError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /connection.*terminated|econnreset|connection.*closed|server closed the connection/i.test(
+    message,
+  );
 }
 
 export async function query<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(text: string, params: unknown[] = []): Promise<T[]> {
-  const pool = getPool();
-  const result = await pool.query(text, params);
-  return result.rows as T[];
+  try {
+    const result = await getPool().query(text, params);
+    return result.rows as T[];
+  } catch (err) {
+    // A dropped connection can surface as a query-level error too (not just
+    // the pool's `error` event above). Retry once against a fresh pool
+    // before giving up, since a single dropped connection shouldn't fail
+    // the whole request.
+    if (!isConnectionError(err)) throw err;
+    global.__pgPool = undefined;
+    const result = await getPool().query(text, params);
+    return result.rows as T[];
+  }
 }
 
 export async function queryOne<

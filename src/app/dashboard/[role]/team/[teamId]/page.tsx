@@ -1,6 +1,4 @@
-// src/app/dashboard/[role]/team/[teamId]/page.tsx
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import {
@@ -12,7 +10,7 @@ import {
 } from "@/lib/data";
 import { currentPeriod } from "@/lib/db";
 import { buildCriteriaMaps, buildExistingEvaluations } from "@/lib/roleCriteriaHelpers";
-import RoleDashboard from "@/components/RoleDashboard";
+import TeamResultsTable from "@/components/TeamResultsTable";
 
 export const dynamic = "force-dynamic";
 
@@ -57,27 +55,19 @@ export default async function RoleTeamDashboardPage({
     evaluations,
     role.id,
   );
+  const criteria = role.scope === "fixed" ? criteriaFixed : (criteriaByTeam[team.id] ?? []);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
-      <div className="flex items-baseline justify-between mb-1 flex-wrap gap-2">
-        <h1 className="text-2xl font-bold tracking-tight">
-          {role.name} Dashboard — {team.name}
-        </h1>
-        <Link href={`/dashboard/${role.key}/teams`} className="text-sm underline">
-          All teams
-        </Link>
-      </div>
+      <h1 className="text-2xl font-bold tracking-tight mb-1">
+        {role.name} Dashboard — {team.name}
+      </h1>
       <p className="text-sm text-neutral-600 mb-8">
-        Submit {role.name} evaluations for {team.name} — {period}.
+        Submitted {role.name} evaluations for {team.name} — {period}.
       </p>
-      <RoleDashboard
+      <TeamResultsTable
         roleKey={role.key}
-        roleName={role.name}
-        scope={role.scope}
-        criteriaFixed={criteriaFixed}
-        criteriaByTeam={criteriaByTeam}
-        teams={[team]}
+        criteria={criteria}
         employees={employees}
         existingRatings={existingRatings}
         existingDocuments={existingDocuments}

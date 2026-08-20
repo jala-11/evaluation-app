@@ -46,3 +46,6 @@ body {
     Arial,
     sans-serif;
 }
+#next-logo{
+  display: none!important;
+}
