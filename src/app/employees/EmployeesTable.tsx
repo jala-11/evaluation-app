@@ -1,7 +1,7 @@
 "use client";
 
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import BulkUploadEmployees from "./BulkUploadEmployees";
 
 type Team = { id: number; key: string; name: string };
@@ -16,6 +16,13 @@ type Employee = {
   team_name: string;
   project: string | null;
 };
+
+// Natural sort so "WS9" comes before "WS10" instead of after it.
+function sortByEmpId(list: Employee[]): Employee[] {
+  return [...list].sort((a, b) =>
+    a.emp_id.localeCompare(b.emp_id, undefined, { numeric: true, sensitivity: "base" }),
+  );
+}
 
 export default function EmployeesTable({
   initialEmployees,
@@ -34,11 +41,26 @@ export default function EmployeesTable({
     project: "",
   };
 
-  const [employees, setEmployees] = useState(initialEmployees);
+  const [employees, setEmployees] = useState(() => sortByEmpId(initialEmployees));
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [teamFilter, setTeamFilter] = useState<number | "all">("all");
+
+  const visibleEmployees = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return employees.filter((emp) => {
+      if (teamFilter !== "all" && emp.team_id !== teamFilter) return false;
+      if (!query) return true;
+      return (
+        emp.emp_id.toLowerCase().includes(query) ||
+        emp.name.toLowerCase().includes(query) ||
+        emp.email.toLowerCase().includes(query)
+      );
+    });
+  }, [employees, search, teamFilter]);
 
   function startEdit(emp: Employee) {
     setEditingId(emp.id);
@@ -79,12 +101,12 @@ export default function EmployeesTable({
       }
       if (isEditing) {
         setEmployees((prev) =>
-          prev.map((e2) => (e2.id === editingId ? data.employee : e2)),
+          sortByEmpId(
+            prev.map((e2) => (e2.id === editingId ? data.employee : e2)),
+          ),
         );
       } else {
-        setEmployees((prev) =>
-          [...prev, data.employee].sort((a, b) => a.name.localeCompare(b.name)),
-        );
+        setEmployees((prev) => sortByEmpId([...prev, data.employee]));
       }
       cancelEdit();
     } finally {
@@ -113,9 +135,7 @@ export default function EmployeesTable({
           teams={teams}
           onImported={(imported) => {
             if (imported.length === 0) return;
-            setEmployees((prev) =>
-              [...prev, ...imported].sort((a, b) => a.name.localeCompare(b.name)),
-            );
+            setEmployees((prev) => sortByEmpId([...prev, ...imported]));
           }}
         />
       )}
@@ -212,6 +232,40 @@ export default function EmployeesTable({
         </form>
       )}
 
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+          <label className="text-xs font-medium block mb-1">Search</label>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Emp ID, name, or email"
+            className="text-sm border border-black/10 rounded-md px-3 py-1.5 bg-white w-56"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium block mb-1">Team</label>
+          <select
+            value={teamFilter}
+            onChange={(e) =>
+              setTeamFilter(e.target.value === "all" ? "all" : Number(e.target.value))
+            }
+            className="text-sm border border-black/10 rounded-md px-3 py-1.5 bg-white"
+          >
+            <option value="all">All teams</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs text-neutral-500 pb-1.5">
+          {visibleEmployees.length} of {employees.length} employee
+          {employees.length === 1 ? "" : "s"}
+        </p>
+      </div>
+
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-black/10 text-left">
@@ -224,7 +278,7 @@ export default function EmployeesTable({
           </tr>
         </thead>
         <tbody>
-          {employees.map((emp) => (
+          {visibleEmployees.map((emp) => (
             <tr key={emp.id} className="border-b border-black/5">
               <td className="py-2 pr-4 text-neutral-700">{emp.emp_id}</td>
               <td className="py-2 pr-4 text-neutral-700">{emp.name}</td>
@@ -251,13 +305,15 @@ export default function EmployeesTable({
               )}
             </tr>
           ))}
-          {employees.length === 0 && (
+          {visibleEmployees.length === 0 && (
             <tr>
               <td
                 colSpan={canEdit ? 6 : 5}
                 className="py-6 text-center text-neutral-500"
               >
-                No employees yet.
+                {employees.length === 0
+                  ? "No employees yet."
+                  : "No employees match your search."}
               </td>
             </tr>
           )}
